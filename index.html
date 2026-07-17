@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trend Following Dashboard PRO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-[#0f172a] text-gray-200 font-sans min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- ส่วนหัว (Header) & ช่องค้นหา -->
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 bg-[#1e293b] p-6 rounded-2xl shadow-[0_4_20px_rgba(0,0,0,0.5)] border border-slate-700/50 gap-4">
+            <div>
+                <h1 class="text-3xl font-black bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent flex items-center gap-3 pb-1">
+                    <i class="fa-solid fa-chart-pie text-blue-400"></i> Trend Following PRO
+                </h1>
+                <p class="text-slate-400 mt-1 text-sm"><i class="fa-regular fa-clock"></i> Timeframe: 1 Day | ระบบสแกนหาจุดตัด EMA 50/200</p>
+            </div>
+            
+            <div class="w-full lg:w-auto flex flex-col sm:flex-row items-center gap-3">
+                <!-- 🔍 ช่องค้นหา -->
+                <div class="relative w-full sm:w-64">
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <i class="fa-solid fa-magnifying-glass text-slate-500"></i>
+                    </div>
+                    <input type="text" id="search-box" class="bg-[#0f172a] border border-slate-700/50 text-white text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-2.5 placeholder-slate-500 shadow-inner transition-all focus:outline-none" placeholder="ค้นหาหุ้น (เช่น AAPL, Tesla)...">
+                </div>
+
+                <!-- ป้ายสถานะ -->
+                <div class="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-4 py-2.5 bg-[#0f172a] rounded-xl border border-slate-700/50 shadow-inner whitespace-nowrap">
+                    <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.8)]"></div>
+                    <span id="status-text" class="text-sm font-medium tracking-wide">รอเชื่อมต่อ...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- พื้นที่แสดงการ์ดหุ้น -->
+        <div id="stock-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <div class="col-span-full text-center py-20 text-slate-500 animate-pulse">
+                <i class="fa-solid fa-satellite-dish text-4xl mb-3"></i>
+                <p>กำลังดึงข้อมูลกราฟและคำนวณเทรนด์...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://trend-following-bot.onrender.com/api/stocks';
+        let allStocksData = []; // ตัวแปรเก็บข้อมูลหุ้นทั้งหมดไว้ใช้ตอนค้นหา
+
+        async function fetchStocks() {
+            try {
+                const response = await fetch(API_URL);
+                const result = await response.json();
+                
+                const statusDot = document.getElementById('status-dot');
+                const statusText = document.getElementById('status-text');
+
+                if (!result.isReady) {
+                    statusDot.classList.replace('bg-emerald-500', 'bg-yellow-500');
+                    statusDot.classList.add('animate-pulse');
+                    statusText.innerText = 'ระบบกำลังรวบรวมข้อมูล...';
+                    return;
+                }
+
+                statusDot.classList.replace('bg-yellow-500', 'bg-emerald-500');
+                statusDot.classList.remove('animate-pulse');
+                statusDot.classList.replace('shadow-[0_0_8px_rgba(234,179,8,0.8)]', 'shadow-[0_0_8px_rgba(16,185,129,0.8)]');
+                const timeNow = new Date().toLocaleTimeString('th-TH');
+                statusText.innerHTML = `อัปเดตล่าสุด: <span class="text-emerald-400">${timeNow}</span>`;
+
+                allStocksData = result.data; // เก็บข้อมูลลงตัวแปรหลัก
+                
+                // สั่งให้วาดการ์ดโดยอิงจากคำค้นหาปัจจุบัน (ถ้ามี)
+                const searchTerm = document.getElementById('search-box').value.toLowerCase();
+                filterAndRenderStocks(searchTerm);
+
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                document.getElementById('status-dot').classList.replace('bg-emerald-500', 'bg-rose-500');
+                document.getElementById('status-dot').classList.replace('shadow-[0_0_8px_rgba(16,185,129,0.8)]', 'shadow-[0_0_8px_rgba(225,29,72,0.8)]');
+                document.getElementById('status-text').innerText = 'ขาดการเชื่อมต่อ';
+            }
+        }
+
+        // ฟังก์ชันสำหรับกรองและวาดการ์ดหุ้น
+        function filterAndRenderStocks(searchTerm) {
+            const container = document.getElementById('stock-container');
+            container.innerHTML = '';
+
+            // กรองข้อมูลที่ชื่อย่อ หรือ ชื่อเต็ม ตรงกับคำค้นหา
+            const filteredStocks = allStocksData.filter(stock => 
+                stock.symbol.toLowerCase().includes(searchTerm) || 
+                stock.name.toLowerCase().includes(searchTerm)
+            );
+
+            if (filteredStocks.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-20 text-slate-500">
+                        <i class="fa-solid fa-magnifying-glass text-4xl mb-3 opacity-50"></i>
+                        <p>ไม่พบข้อมูลหุ้นที่ค้นหา</p>
+                    </div>`;
+                return;
+            }
+
+            filteredStocks.forEach(stock => {
+                const ema50 = calculateEMA(stock.historicalPrices, 50);
+                const ema200 = calculateEMA(stock.historicalPrices, 200);
+                const gapPercent = ema200 > 0 ? ((ema50 - ema200) / ema200) * 100 : 0;
+                
+                let trendBadge = '';
+                let cardBorder = 'border-slate-700/50 hover:border-slate-500 bg-[#1e293b]';
+                
+                if (ema50 > ema200) {
+                    if (gapPercent <= 3.0) { 
+                        trendBadge = `<span class="px-2.5 py-1 bg-yellow-500/20 text-yellow-400 text-[11px] font-bold rounded-md border border-yellow-500/50 shadow-[0_0_10px_rgba(234,179,8,0.2)] animate-pulse"><i class="fa-solid fa-bolt text-yellow-300"></i> ต้นรอบขาขึ้น</span>`;
+                        cardBorder = 'border-yellow-500/40 hover:border-yellow-400 bg-gradient-to-b from-[#1e293b] to-yellow-900/10';
+                    } else {
+                        trendBadge = `<span class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-[11px] rounded-md border border-emerald-500/30"><i class="fa-solid fa-arrow-trend-up"></i> ขาขึ้น</span>`;
+                    }
+                } else if (ema50 < ema200) {
+                    if (gapPercent >= -3.0) { 
+                        trendBadge = `<span class="px-2.5 py-1 bg-orange-500/20 text-orange-400 text-[11px] font-bold rounded-md border border-orange-500/50 animate-pulse"><i class="fa-solid fa-triangle-exclamation"></i> จบรอบ/เตือนภัย</span>`;
+                        cardBorder = 'border-orange-500/40 hover:border-orange-400 bg-gradient-to-b from-[#1e293b] to-orange-900/10';
+                    } else {
+                        trendBadge = `<span class="px-2.5 py-1 bg-rose-500/10 text-rose-400 text-[11px] rounded-md border border-rose-500/30"><i class="fa-solid fa-arrow-trend-down"></i> ขาลง</span>`;
+                    }
+                } else {
+                    trendBadge = `<span class="px-2.5 py-1 bg-slate-700 text-slate-300 text-[11px] rounded-md">กำลังประมวลผล</span>`;
+                }
+
+                const priceColor = stock.change >= 0 ? 'text-emerald-400' : 'text-rose-400';
+                const sign = stock.change >= 0 ? '+' : '';
+
+                const card = `
+                    <div class="rounded-2xl p-5 border transition-all duration-300 shadow-lg ${cardBorder}">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h2 class="text-xl font-bold tracking-tight">${stock.symbol}</h2>
+                                <p class="text-[11px] text-slate-400 truncate w-32" title="${stock.name}">${stock.name}</p>
+                            </div>
+                            ${trendBadge}
+                        </div>
+                        
+                        <div class="mb-5">
+                            <div class="text-2xl font-black text-white">$${stock.price.toFixed(2)}</div>
+                            <div class="text-[12px] font-medium ${priceColor}">${sign}${stock.change.toFixed(2)}%</div>
+                        </div>
+                        
+                        <div class="pt-4 border-t border-slate-700/50">
+                            <div class="flex justify-between text-[11px] mb-1.5">
+                                <span class="text-slate-400">EMA 50: <span class="font-bold ${ema50 > ema200 ? 'text-emerald-400' : 'text-rose-400'}">${ema50 > 0 ? '$'+ema50.toFixed(2) : '-'}</span></span>
+                                <span class="text-slate-400">EMA 200: <span class="font-bold text-white">${ema200 > 0 ? '$'+ema200.toFixed(2) : '-'}</span></span>
+                            </div>
+                            
+                            <div class="flex justify-between items-center text-[10px] mt-3 bg-[#0f172a] px-2.5 py-1.5 rounded-lg border border-slate-700/50">
+                                <span class="${stock.isHalal ? 'text-emerald-400' : 'text-rose-400'} font-medium">
+                                    <i class="fa-solid fa-mosque"></i> หนี้สิน ${stock.debtRatio}%
+                                </span>
+                                <span class="text-slate-400">Gap: <span class="${gapPercent > 0 ? 'text-emerald-400' : 'text-rose-400'}">${gapPercent > 0 ? '+' : ''}${gapPercent.toFixed(1)}%</span></span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += card;
+            });
+        }
+
+        function calculateEMA(prices, period) {
+            if (!prices || prices.length < period) return 0;
+            const k = 2 / (period + 1);
+            let ema = prices[0];
+            for (let i = 1; i < prices.length; i++) {
+                ema = (prices[i] * k) + (ema * (1 - k));
+            }
+            return Math.round(ema * 100) / 100;
+        }
+        
+        // 🎯 ดักจับเหตุการณ์ตอนผู้ใช้พิมพ์ในช่องค้นหา
+        document.getElementById('search-box').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            filterAndRenderStocks(searchTerm);
+        });
+
+        fetchStocks();
+        setInterval(fetchStocks, 60000); 
+    </script>
+</body>
+</html>
