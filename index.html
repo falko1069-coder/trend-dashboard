@@ -59,7 +59,7 @@
 
                 <!-- ปุ่ม Refresh & ป้ายสถานะ -->
                 <div class="flex gap-2 w-full sm:w-auto">
-                    <button onclick="fetchStocks()" class="flex-none px-3.5 py-2.5 bg-[#0f172a] hover:bg-slate-700 hover:text-white text-slate-400 rounded-xl border border-slate-700/50 shadow-inner transition-all group" title="อัปเดตข้อมูลเดี๋ยวนี้">
+                    <button onclick="fetchStocks(true)" class="flex-none px-3.5 py-2.5 bg-[#0f172a] hover:bg-slate-700 hover:text-white text-slate-400 rounded-xl border border-slate-700/50 shadow-inner transition-all group" title="อัปเดตข้อมูลเดี๋ยวนี้">
                         <i class="fa-solid fa-rotate-right group-hover:rotate-180 transition-transform duration-500"></i>
                     </button>
                     
@@ -85,13 +85,16 @@
         // 🌟 เปลี่ยน URL ด้านล่างนี้เป็นของเว็บ Render ของคุณ ถ้าคุณใช้โดเมนอื่น
         const API_URL = 'https://trend-following-bot.onrender.com/api/stocks';
         let processedStocksData = []; 
+        let pollingTimer;
 
-        async function fetchStocks() {
+        async function fetchStocks(isManual = false) {
+            clearTimeout(pollingTimer); // ล้างรอบเก่าทิ้งก่อนเพื่อไม่ให้รันซ้อนกัน
             try {
                 const statusDot = document.getElementById('status-dot');
                 const statusText = document.getElementById('status-text');
                 const btnIcon = document.querySelector('.fa-rotate-right');
-                btnIcon.classList.add('animate-spin');
+                
+                if (isManual) btnIcon.classList.add('animate-spin');
 
                 const response = await fetch(API_URL);
                 const result = await response.json();
@@ -100,6 +103,9 @@
                     statusDot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.8)]';
                     statusText.innerText = 'ระบบกำลังรวบรวมข้อมูล...';
                     btnIcon.classList.remove('animate-spin');
+                    
+                    // ถ้าระบบยังไม่พร้อม ให้เช็คใหม่ทุกๆ 4 วินาที
+                    pollingTimer = setTimeout(() => fetchStocks(), 4000);
                     return;
                 }
 
@@ -129,12 +135,18 @@
                 });
                 
                 updateDisplay();
+                
+                // ถ้าข้อมูลโหลดสำเร็จแล้ว ปรับความถี่เป็นดึงทุกๆ 1 นาที
+                pollingTimer = setTimeout(() => fetchStocks(), 60000);
 
             } catch (error) {
                 console.error("Error fetching data:", error);
                 document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.8)]';
                 document.getElementById('status-text').innerText = 'ขาดการเชื่อมต่อ';
                 document.querySelector('.fa-rotate-right').classList.remove('animate-spin');
+                
+                // ถ้าเน็ตหลุด ให้ลองเชื่อมต่อใหม่ใน 10 วินาที
+                pollingTimer = setTimeout(() => fetchStocks(), 10000);
             }
         }
 
@@ -214,13 +226,13 @@
                                 <span class="text-slate-400">Gap: <span class="${stock.gapPercent > 0 ? 'text-emerald-400' : 'text-rose-400'}">${stock.gapPercent > 0 ? '+' : ''}${stock.gapPercent.toFixed(1)}%</span></span>
                             </div>
 
-                            <!-- 🌟 กล่อง AI Summary ด้านล่างสุดของการ์ด -->
+                            <!-- 🌟 กล่อง AI Summary เพิ่ม whitespace-pre-wrap ให้อ่านง่าย -->
                             <div class="p-2.5 rounded-lg border ${aiBoxBg} transition-all duration-300">
                                 <div class="flex items-center gap-1.5 mb-1">
                                     <i class="fa-solid fa-wand-magic-sparkles ${aiIconColor} text-[10px]"></i>
                                     <span class="text-[10px] font-semibold ${aiTitleColor}">AI Analyst Insight</span>
                                 </div>
-                                <p class="text-[11px] leading-relaxed cursor-pointer ai-text-clamp ${aiTextColor}" title="นำเมาส์ชี้เพื่ออ่านข้อความเต็ม">
+                                <p class="text-[11px] leading-relaxed cursor-pointer ai-text-clamp whitespace-pre-wrap ${aiTextColor}" title="นำเมาส์ชี้เพื่ออ่านข้อความเต็ม">
                                     ${stock.aiSummaryText}
                                 </p>
                             </div>
@@ -245,8 +257,8 @@
         document.getElementById('search-box').addEventListener('input', updateDisplay);
         document.getElementById('filter-box').addEventListener('change', updateDisplay);
 
+        // จุดเริ่มต้นการทำงาน
         fetchStocks();
-        setInterval(fetchStocks, 60000); 
     </script>
 </body>
 </html>
